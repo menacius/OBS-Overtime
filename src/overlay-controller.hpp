@@ -29,7 +29,7 @@ public:
     // Re-applies configuration (style + enable state) to all overlays.
     void reloadConfig();
 
-public slots:
+public Q_SLOTS:
     void refresh();
 
 private:

@@ -1,133 +1,259 @@
 <#
 .SYNOPSIS
-    Configures and builds the Projector Time Overlay OBS plugin on Windows.
-
-.DESCRIPTION
-    Wraps the CMake configure + build steps using the Visual Studio
-    generator (x64). It locates the OBS Studio and Qt6 dependencies from,
-    in order of precedence:
-      1. The -ObsPath / -Qt6Path parameters.
-      2. The OBS_STUDIO_DIR / Qt6_DIR (or CMAKE_PREFIX_PATH) environment
-         variables.
-      3. A local '.deps' directory next to the repository (matching the
-         layout produced by the OBS obs-deps release archives).
-
-.PARAMETER Configuration
-    CMake build configuration. Defaults to RelWithDebInfo.
-
-.PARAMETER ObsPath
-    Path to an OBS Studio build/install tree that provides libobs and
-    obs-frontend-api CMake config packages.
-
-.PARAMETER Qt6Path
-    Path to the Qt6 installation prefix (the folder containing
-    'lib/cmake/Qt6').
-
-.PARAMETER BuildDir
-    Output build directory. Defaults to 'build_x64'.
+  Configure and build OBS Overtime on Windows.
 
 .EXAMPLE
-    ./scripts/build-windows.ps1 -ObsPath C:\obs-studio -Qt6Path C:\Qt\6.6.2\msvc2019_64
+  pwsh ./scripts/build-windows.ps1 -Clean
 
 .EXAMPLE
-    # Using a local .deps directory created from obs-deps archives.
-    ./scripts/build-windows.ps1
+  pwsh ./scripts/build-windows.ps1 -ObsSdkDir "C:\Users\menac\Desktop\obs-build-dependencies" -Qt6Path "C:\Qt\6.6.3\msvc2019_64" -Clean
+
+.EXAMPLE
+  pwsh ./scripts/build-windows.ps1 -Clean -InstallToObs
 #>
+
 [CmdletBinding()]
 param(
-    [ValidateSet('Debug', 'Release', 'RelWithDebInfo', 'MinSizeRel')]
-    [string]$Configuration = 'RelWithDebInfo',
+  [ValidateSet("Debug", "Release", "RelWithDebInfo", "MinSizeRel")]
+  [string]$Configuration = "RelWithDebInfo",
 
-    [string]$ObsPath = $env:OBS_STUDIO_DIR,
+  [string]$BuildDir = "build_x64",
 
-    [string]$Qt6Path = $env:Qt6_DIR,
+  [string]$Generator = "Visual Studio 17 2022",
 
-    [string]$BuildDir = 'build_x64',
+  [string]$ObsSdkDir = $env:OBS_SDK_DIR,
 
-    [string]$Generator = 'Visual Studio 17 2022'
+  [string]$ObsStudioDir = $env:OBS_STUDIO_DIR,
+
+  [string]$Qt6Path = $env:Qt6_DIR,
+
+  [switch]$Clean,
+
+  [switch]$InstallToObs,
+
+  [string]$ObsInstallDir = "${env:ProgramFiles}\obs-studio"
 )
 
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 
-# Repository root (parent of this scripts/ directory).
-$RepoRoot = Split-Path -Parent $PSScriptRoot
+function Write-Step {
+  param([string]$Message)
+  Write-Host ""
+  Write-Host "== $Message ==" -ForegroundColor Cyan
+}
+
+function Find-ObsSdk {
+  param(
+    [string]$ExplicitObsSdkDir,
+    [string]$ExplicitObsStudioDir,
+    [string]$RepoRoot
+  )
+
+  $candidates = @()
+
+  if ($ExplicitObsSdkDir) { $candidates += $ExplicitObsSdkDir }
+  if ($ExplicitObsStudioDir) { $candidates += $ExplicitObsStudioDir }
+
+  $candidates += @(
+    (Join-Path $RepoRoot ".deps"),
+    (Join-Path $RepoRoot "obs-build-dependencies"),
+    "$env:USERPROFILE\Desktop\obs-build-dependencies",
+    "$env:USERPROFILE\Downloads\obs-build-dependencies",
+    "$env:ProgramFiles\obs-studio",
+    "$env:ProgramW6432\obs-studio"
+  )
+
+  foreach ($base in @((Join-Path $RepoRoot ".deps"), (Join-Path $RepoRoot "obs-build-dependencies"), "$env:USERPROFILE\Desktop\obs-build-dependencies", "$env:USERPROFILE\Downloads\obs-build-dependencies")) {
+    if (Test-Path $base) {
+      Get-ChildItem -Path $base -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like "plugin-deps-*" -or $_.Name -like "obs-studio*" -or $_.Name -like "windows-deps*" } |
+        ForEach-Object { $candidates += $_.FullName }
+    }
+  }
+
+  foreach ($candidate in $candidates) {
+    if (-not $candidate -or -not (Test-Path $candidate)) { continue }
+
+    $obsHeader = Get-ChildItem -Path $candidate -Recurse -Filter "obs-module.h" -ErrorAction SilentlyContinue | Select-Object -First 1
+    $obsLib = Get-ChildItem -Path $candidate -Recurse -Include "obs.lib", "libobs.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+    $frontendLib = Get-ChildItem -Path $candidate -Recurse -Filter "obs-frontend-api.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+
+    if ($obsHeader -and $obsLib -and $frontendLib) {
+      return (Resolve-Path $candidate).Path
+    }
+  }
+
+  return $null
+}
+
+function Find-QtPrefix {
+  param(
+    [string]$ExplicitQt6Path,
+    [string]$ObsSdk,
+    [string]$RepoRoot
+  )
+
+  $candidates = @()
+
+  if ($ExplicitQt6Path) { $candidates += $ExplicitQt6Path }
+
+  if ($env:CMAKE_PREFIX_PATH) {
+    $candidates += ($env:CMAKE_PREFIX_PATH -split ";")
+  }
+
+  if ($ObsSdk) {
+    $candidates += @($ObsSdk, (Join-Path $ObsSdk "qt6"))
+  }
+
+  $candidates += @(
+    (Join-Path $RepoRoot ".deps\qt6"),
+    "$env:USERPROFILE\Desktop\obs-build-dependencies",
+    "$env:USERPROFILE\Downloads\obs-build-dependencies",
+    "C:\Qt\6.7.3\msvc2019_64",
+    "C:\Qt\6.6.3\msvc2019_64",
+    "C:\Qt\6.6.2\msvc2019_64"
+  )
+
+  foreach ($candidate in $candidates) {
+    if (-not $candidate -or -not (Test-Path $candidate)) { continue }
+
+    # Case 1: candidate is the Qt prefix.
+    $config1 = Join-Path $candidate "lib\cmake\Qt6\Qt6Config.cmake"
+    if (Test-Path $config1) {
+      return (Resolve-Path $candidate).Path
+    }
+
+    # Case 2: candidate is already the lib directory.
+    $config2 = Join-Path $candidate "cmake\Qt6\Qt6Config.cmake"
+    if (Test-Path $config2) {
+      return (Resolve-Path (Join-Path $candidate "..")).Path
+    }
+
+    # Case 3: recursive fallback, useful for obs-build-dependencies folders.
+    $qtConfig = Get-ChildItem -Path $candidate -Recurse -Filter "Qt6Config.cmake" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($qtConfig) {
+      # Qt6Config.cmake is expected under: <prefix>\lib\cmake\Qt6\Qt6Config.cmake
+      $qt6Dir = Split-Path -Parent $qtConfig.FullName
+      $cmakeDir = Split-Path -Parent $qt6Dir
+      $libDir = Split-Path -Parent $cmakeDir
+      $prefixDir = Split-Path -Parent $libDir
+      return (Resolve-Path $prefixDir).Path
+    }
+  }
+
+  return $null
+}
+
+$RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $RepoRoot
 
-Write-Host "== Projector Time Overlay :: Windows build ==" -ForegroundColor Cyan
-Write-Host "Repository : $RepoRoot"
-Write-Host "Config     : $Configuration"
+Write-Step "OBS Overtime Windows build"
+Write-Host "Repo          : $RepoRoot"
+Write-Host "Configuration : $Configuration"
+Write-Host "Build dir     : $BuildDir"
 
-# --- Resolve dependency paths ------------------------------------------------
-
-$DepsDir = Join-Path $RepoRoot '.deps'
-
-function Resolve-DepPath {
-    param(
-        [string]$Explicit,
-        [string[]]$Candidates,
-        [string]$Name
-    )
-    if ($Explicit -and (Test-Path $Explicit)) {
-        return (Resolve-Path $Explicit).Path
-    }
-    foreach ($candidate in $Candidates) {
-        if ($candidate -and (Test-Path $candidate)) {
-            return (Resolve-Path $candidate).Path
-        }
-    }
-    Write-Warning "Could not auto-detect $Name. Pass it explicitly or set the matching environment variable."
-    return $null
+if (-not [System.Environment]::Is64BitOperatingSystem) {
+  throw "64-bit Windows is required."
 }
 
-$ResolvedObs = Resolve-DepPath -Explicit $ObsPath -Name 'OBS Studio (libobs)' -Candidates @(
-    (Join-Path $DepsDir 'obs-studio'),
-    (Join-Path $DepsDir 'obs-studio/build_x64')
-)
-
-$ResolvedQt = Resolve-DepPath -Explicit $Qt6Path -Name 'Qt6' -Candidates @(
-    (Join-Path $DepsDir 'qt6'),
-    $env:CMAKE_PREFIX_PATH
-)
-
-# --- Assemble CMake arguments -----------------------------------------------
-
-$prefixPaths = @()
-if ($ResolvedObs) { $prefixPaths += $ResolvedObs }
-if ($ResolvedQt) { $prefixPaths += $ResolvedQt }
-
-$cmakeArgs = @(
-    '-S', '.',
-    '-B', $BuildDir,
-    '-G', $Generator,
-    '-A', 'x64',
-    '-DENABLE_FRONTEND_API=ON',
-    '-DENABLE_QT=ON'
-)
-
-if ($prefixPaths.Count -gt 0) {
-    $joined = ($prefixPaths -join ';')
-    $cmakeArgs += "-DCMAKE_PREFIX_PATH=$joined"
-    Write-Host "CMAKE_PREFIX_PATH : $joined"
+if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
+  throw "cmake was not found in PATH."
 }
 
-# --- Configure ---------------------------------------------------------------
+if ($Clean -and (Test-Path $BuildDir)) {
+  Write-Step "Cleaning build directory"
+  Remove-Item -Recurse -Force $BuildDir
+}
 
-Write-Host "`n-- Configuring --" -ForegroundColor Yellow
-& cmake @cmakeArgs
+Write-Step "Resolving dependencies"
+
+$ResolvedObsSdk = Find-ObsSdk -ExplicitObsSdkDir $ObsSdkDir -ExplicitObsStudioDir $ObsStudioDir -RepoRoot $RepoRoot
+if (-not $ResolvedObsSdk) {
+  throw @"
+Could not find OBS development files.
+
+Pass one of these:
+  -ObsSdkDir C:\path\to\obs-sdk-or-plugin-deps
+  -ObsStudioDir C:\path\to\obs-studio-build-or-install
+
+The directory must contain:
+  include\obs-module.h
+  obs.lib or libobs.lib
+  obs-frontend-api.lib
+"@
+}
+
+$ResolvedQt = Find-QtPrefix -ExplicitQt6Path $Qt6Path -ObsSdk $ResolvedObsSdk -RepoRoot $RepoRoot
+if (-not $ResolvedQt) {
+  throw @"
+Could not find Qt6.
+
+Pass:
+  -Qt6Path C:\Qt\6.x.x\msvc2019_64
+
+The directory must contain:
+  lib\cmake\Qt6\Qt6Config.cmake
+"@
+}
+
+$Qt6ConfigDir = Join-Path $ResolvedQt "lib\cmake\Qt6"
+$PrefixPath = @($ResolvedObsSdk, $ResolvedQt) -join ";"
+
+Write-Host "OBS SDK       : $ResolvedObsSdk"
+Write-Host "Qt6 prefix    : $ResolvedQt"
+Write-Host "Qt6_DIR       : $Qt6ConfigDir"
+
+Write-Step "Configuring"
+
+$CMakeConfigureArgs = @(
+  "-S", ".",
+  "-B", $BuildDir,
+  "-G", $Generator,
+  "-A", "x64",
+  "-DENABLE_FRONTEND_API=ON",
+  "-DENABLE_QT=ON",
+  "-DOBS_SDK_DIR=$ResolvedObsSdk",
+  "-DQt6_DIR=$Qt6ConfigDir",
+  "-DCMAKE_PREFIX_PATH=$PrefixPath"
+)
+
+& cmake @CMakeConfigureArgs
 if ($LASTEXITCODE -ne 0) {
-    throw "CMake configuration failed with exit code $LASTEXITCODE."
+  throw "CMake configure failed with exit code $LASTEXITCODE."
 }
 
-# --- Build -------------------------------------------------------------------
+Write-Step "Building"
 
-Write-Host "`n-- Building --" -ForegroundColor Yellow
 & cmake --build $BuildDir --config $Configuration --parallel
 if ($LASTEXITCODE -ne 0) {
-    throw "Build failed with exit code $LASTEXITCODE."
+  throw "Build failed with exit code $LASTEXITCODE."
 }
 
-$outDir = Join-Path $RepoRoot "$BuildDir/$Configuration"
-Write-Host "`n== Build complete ==" -ForegroundColor Green
-Write-Host "Plugin binary (.dll) is in: $outDir"
-Write-Host "Copy the .dll into '<OBS>/obs-plugins/64bit' and the 'data' folder into '<OBS>/data/obs-plugins/projector-time-overlay'."
+$PackageDir = Join-Path $RepoRoot "$BuildDir"
+Write-Step "Build complete"
+Write-Host "Build dir: $PackageDir" -ForegroundColor Green
+
+if ($InstallToObs) {
+  if (-not (Test-Path $ObsInstallDir)) {
+    throw "OBS install dir not found: $ObsInstallDir"
+  }
+
+  $BuiltDll = Get-ChildItem -Path $BuildDir -Recurse -Filter "obs-overtime.dll" | Select-Object -First 1
+  if (-not $BuiltDll) {
+    throw "Could not find built obs-overtime.dll under $BuildDir"
+  }
+
+  $TargetBinDir = Join-Path $ObsInstallDir "obs-plugins\64bit"
+  New-Item -ItemType Directory -Force -Path $TargetBinDir | Out-Null
+  Copy-Item -Force $BuiltDll.FullName (Join-Path $TargetBinDir "obs-overtime.dll")
+
+  $StagedData = Join-Path $RepoRoot "data"
+  if (Test-Path $StagedData) {
+    $TargetDataDir = Join-Path $ObsInstallDir "data\obs-plugins\obs-overtime"
+    New-Item -ItemType Directory -Force -Path $TargetDataDir | Out-Null
+    Copy-Item -Recurse -Force "$StagedData\*" $TargetDataDir
+  }
+
+  Write-Host "Installed to OBS: $ObsInstallDir" -ForegroundColor Green
+}

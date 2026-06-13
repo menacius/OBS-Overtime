@@ -16,7 +16,7 @@ class MediaDock : public QWidget {
 public:
     explicit MediaDock(QWidget *parent = nullptr);
 
-private slots:
+private Q_SLOTS:
     void refreshList();
     void updateStatus();
     void onItemChanged(class QListWidgetItem *item);
