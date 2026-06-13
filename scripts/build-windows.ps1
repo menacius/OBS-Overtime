@@ -2,14 +2,11 @@
 .SYNOPSIS
   Configure and build OBS Overtime on Windows.
 
-.EXAMPLE
-  pwsh ./scripts/build-windows.ps1 -Clean
-
-.EXAMPLE
-  pwsh ./scripts/build-windows.ps1 -ObsSdkDir "C:\Users\menac\Desktop\obs-build-dependencies" -Qt6Path "C:\Qt\6.6.3\msvc2019_64" -Clean
-
-.EXAMPLE
-  pwsh ./scripts/build-windows.ps1 -Clean -InstallToObs
+.DESCRIPTION
+  This script intentionally prefers the newest OBS/Qt dependency directories.
+  Old plugin-deps packages such as plugin-deps-2022-08-02-qt6-x64 can fail to
+  parse Qt headers with current Visual Studio 2022 toolchains. Pass -Qt6Path or
+  -ObsSdkDir to override auto-detection.
 #>
 
 [CmdletBinding()]
@@ -21,11 +18,11 @@ param(
 
   [string]$Generator = "Visual Studio 17 2022",
 
-  [string]$ObsSdkDir = $env:OBS_SDK_DIR,
+  [string]$ObsSdkDir = "",
 
-  [string]$ObsStudioDir = $env:OBS_STUDIO_DIR,
+  [string]$ObsStudioDir = "",
 
-  [string]$Qt6Path = $env:Qt6_DIR,
+  [string]$Qt6Path = "",
 
   [switch]$Clean,
 
@@ -35,7 +32,6 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ProgressPreference = "SilentlyContinue"
 
 function Write-Step {
   param([string]$Message)
@@ -43,45 +39,55 @@ function Write-Step {
   Write-Host "== $Message ==" -ForegroundColor Cyan
 }
 
-function Find-ObsSdk {
-  param(
-    [string]$ExplicitObsSdkDir,
-    [string]$ExplicitObsStudioDir,
-    [string]$RepoRoot
-  )
+function Get-ExistingDirectories {
+  param([string[]]$Paths)
 
-  $candidates = @()
+  $result = @()
+  foreach ($path in $Paths) {
+    if ($path -and (Test-Path $path -PathType Container)) {
+      $result += (Resolve-Path $path).Path
+    }
+  }
+  return $result | Select-Object -Unique
+}
 
-  if ($ExplicitObsSdkDir) { $candidates += $ExplicitObsSdkDir }
-  if ($ExplicitObsStudioDir) { $candidates += $ExplicitObsStudioDir }
+function Get-DateScoreFromName {
+  param([string]$Name)
 
-  $candidates += @(
-    (Join-Path $RepoRoot ".deps"),
-    (Join-Path $RepoRoot "obs-build-dependencies"),
-    "$env:USERPROFILE\Desktop\obs-build-dependencies",
-    "$env:USERPROFILE\Downloads\obs-build-dependencies",
-    "$env:ProgramFiles\obs-studio",
-    "$env:ProgramW6432\obs-studio"
-  )
+  if ($Name -match '(20\d{2})[-_](\d{2})[-_](\d{2})') {
+    return [int]("$($Matches[1])$($Matches[2])$($Matches[3])")
+  }
+  if ($Name -match '(20\d{6})') {
+    return [int]$Matches[1]
+  }
+  return 0
+}
 
-  foreach ($base in @((Join-Path $RepoRoot ".deps"), (Join-Path $RepoRoot "obs-build-dependencies"), "$env:USERPROFILE\Desktop\obs-build-dependencies", "$env:USERPROFILE\Downloads\obs-build-dependencies")) {
-    if (Test-Path $base) {
-      Get-ChildItem -Path $base -Directory -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -like "plugin-deps-*" -or $_.Name -like "obs-studio*" -or $_.Name -like "windows-deps*" } |
-        ForEach-Object { $candidates += $_.FullName }
+function Normalize-QtPrefix {
+  param([string]$Path)
+
+  if (-not $Path -or -not (Test-Path $Path)) { return $null }
+  $resolved = (Resolve-Path $Path).Path
+
+  # Qt config dir: <prefix>\lib\cmake\Qt6
+  if (Test-Path (Join-Path $resolved "Qt6Config.cmake")) {
+    $qt6Dir = $resolved
+    $cmakeDir = Split-Path -Parent $qt6Dir
+    $libDir = Split-Path -Parent $cmakeDir
+    $prefixDir = Split-Path -Parent $libDir
+    if (Test-Path (Join-Path $prefixDir "lib\cmake\Qt6\Qt6Config.cmake")) {
+      return (Resolve-Path $prefixDir).Path
     }
   }
 
-  foreach ($candidate in $candidates) {
-    if (-not $candidate -or -not (Test-Path $candidate)) { continue }
+  # Qt prefix: <prefix>\lib\cmake\Qt6\Qt6Config.cmake
+  if (Test-Path (Join-Path $resolved "lib\cmake\Qt6\Qt6Config.cmake")) {
+    return $resolved
+  }
 
-    $obsHeader = Get-ChildItem -Path $candidate -Recurse -Filter "obs-module.h" -ErrorAction SilentlyContinue | Select-Object -First 1
-    $obsLib = Get-ChildItem -Path $candidate -Recurse -Include "obs.lib", "libobs.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
-    $frontendLib = Get-ChildItem -Path $candidate -Recurse -Filter "obs-frontend-api.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
-
-    if ($obsHeader -and $obsLib -and $frontendLib) {
-      return (Resolve-Path $candidate).Path
-    }
+  # Already <prefix>\lib
+  if (Test-Path (Join-Path $resolved "cmake\Qt6\Qt6Config.cmake")) {
+    return (Resolve-Path (Join-Path $resolved "..")).Path
   }
 
   return $null
@@ -94,68 +100,129 @@ function Find-QtPrefix {
     [string]$RepoRoot
   )
 
-  $candidates = @()
+  $manual = @()
+  if ($ExplicitQt6Path) { $manual += $ExplicitQt6Path }
+  if ($env:Qt6_DIR) { $manual += $env:Qt6_DIR }
+  if ($env:QTDIR) { $manual += $env:QTDIR }
 
-  if ($ExplicitQt6Path) { $candidates += $ExplicitQt6Path }
-
-  if ($env:CMAKE_PREFIX_PATH) {
-    $candidates += ($env:CMAKE_PREFIX_PATH -split ";")
+  foreach ($candidate in $manual) {
+    $prefix = Normalize-QtPrefix $candidate
+    if ($prefix) { return $prefix }
   }
 
-  if ($ObsSdk) {
-    $candidates += @($ObsSdk, (Join-Path $ObsSdk "qt6"))
-  }
-
-  $candidates += @(
-    (Join-Path $RepoRoot ".deps\qt6"),
+  $bases = @(
+    (Join-Path $RepoRoot ".deps"),
+    (Join-Path $RepoRoot "obs-build-dependencies"),
     "$env:USERPROFILE\Desktop\obs-build-dependencies",
-    "$env:USERPROFILE\Downloads\obs-build-dependencies",
-    "C:\Qt\6.7.3\msvc2019_64",
-    "C:\Qt\6.6.3\msvc2019_64",
-    "C:\Qt\6.6.2\msvc2019_64"
+    "$env:USERPROFILE\Downloads\obs-build-dependencies"
   )
 
-  foreach ($candidate in $candidates) {
-    if (-not $candidate -or -not (Test-Path $candidate)) { continue }
-
-    # Case 1: candidate is the Qt prefix.
-    $config1 = Join-Path $candidate "lib\cmake\Qt6\Qt6Config.cmake"
-    if (Test-Path $config1) {
-      return (Resolve-Path $candidate).Path
-    }
-
-    # Case 2: candidate is already the lib directory.
-    $config2 = Join-Path $candidate "cmake\Qt6\Qt6Config.cmake"
-    if (Test-Path $config2) {
-      return (Resolve-Path (Join-Path $candidate "..")).Path
-    }
-
-    # Case 3: recursive fallback, useful for obs-build-dependencies folders.
-    $qtConfig = Get-ChildItem -Path $candidate -Recurse -Filter "Qt6Config.cmake" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($qtConfig) {
-      # Qt6Config.cmake is expected under: <prefix>\lib\cmake\Qt6\Qt6Config.cmake
-      $qt6Dir = Split-Path -Parent $qtConfig.FullName
-      $cmakeDir = Split-Path -Parent $qt6Dir
-      $libDir = Split-Path -Parent $cmakeDir
-      $prefixDir = Split-Path -Parent $libDir
-      return (Resolve-Path $prefixDir).Path
-    }
+  if ($ObsSdk) {
+    $bases += $ObsSdk
+    $bases += (Split-Path -Parent $ObsSdk)
   }
 
-  return $null
+  if ($env:CMAKE_PREFIX_PATH) {
+    $bases += ($env:CMAKE_PREFIX_PATH -split ";")
+  }
+
+  $dirs = @()
+  foreach ($base in (Get-ExistingDirectories $bases)) {
+    $prefix = Normalize-QtPrefix $base
+    if ($prefix) { $dirs += $prefix }
+
+    Get-ChildItem -Path $base -Directory -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match 'qt6' -or $_.Name -match 'Qt' -or $_.Name -match 'plugin-deps' } |
+      ForEach-Object {
+        $prefix = Normalize-QtPrefix $_.FullName
+        if ($prefix) { $dirs += $prefix }
+      }
+  }
+
+  $dirs = $dirs | Select-Object -Unique
+  if (-not $dirs -or $dirs.Count -eq 0) { return $null }
+
+  $ranked = $dirs | ForEach-Object {
+    [PSCustomObject]@{
+      Path = $_
+      Score = Get-DateScoreFromName (Split-Path -Leaf $_)
+      LastWriteTime = (Get-Item $_).LastWriteTimeUtc
+    }
+  } | Sort-Object -Property Score, LastWriteTime -Descending
+
+  return $ranked[0].Path
 }
 
-$RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+function Test-ObsSdkDir {
+  param([string]$Path)
+
+  if (-not $Path -or -not (Test-Path $Path -PathType Container)) { return $false }
+
+  $obsHeader = Get-ChildItem -Path $Path -Recurse -Filter "obs-module.h" -ErrorAction SilentlyContinue | Select-Object -First 1
+  $obsLib = Get-ChildItem -Path $Path -Recurse -Include "obs.lib", "libobs.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+  $frontendLib = Get-ChildItem -Path $Path -Recurse -Filter "obs-frontend-api.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+
+  return [bool]($obsHeader -and $obsLib -and $frontendLib)
+}
+
+function Find-ObsSdk {
+  param(
+    [string]$ExplicitObsSdkDir,
+    [string]$ExplicitObsStudioDir,
+    [string]$RepoRoot
+  )
+
+  $manual = @()
+  if ($ExplicitObsSdkDir) { $manual += $ExplicitObsSdkDir }
+  if ($ExplicitObsStudioDir) { $manual += $ExplicitObsStudioDir }
+  if ($env:OBS_SDK_DIR) { $manual += $env:OBS_SDK_DIR }
+  if ($env:OBS_STUDIO_DIR) { $manual += $env:OBS_STUDIO_DIR }
+
+  foreach ($candidate in $manual) {
+    if (Test-ObsSdkDir $candidate) { return (Resolve-Path $candidate).Path }
+  }
+
+  $bases = @(
+    (Join-Path $RepoRoot ".deps"),
+    (Join-Path $RepoRoot "obs-build-dependencies"),
+    "$env:USERPROFILE\Desktop\obs-build-dependencies",
+    "$env:USERPROFILE\Downloads\obs-build-dependencies",
+    "$env:ProgramFiles\obs-studio",
+    "$env:ProgramW6432\obs-studio"
+  )
+
+  $dirs = @()
+  foreach ($base in (Get-ExistingDirectories $bases)) {
+    Get-ChildItem -Path $base -Directory -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match 'plugin-deps' -or $_.Name -match 'obs-studio' -or $_.Name -match 'windows-deps' } |
+      ForEach-Object {
+        if (Test-ObsSdkDir $_.FullName) { $dirs += $_.FullName }
+      }
+
+    if (Test-ObsSdkDir $base) { $dirs += $base }
+  }
+
+  $dirs = $dirs | Select-Object -Unique
+  if (-not $dirs -or $dirs.Count -eq 0) { return $null }
+
+  $ranked = $dirs | ForEach-Object {
+    [PSCustomObject]@{
+      Path = (Resolve-Path $_).Path
+      Score = Get-DateScoreFromName (Split-Path -Leaf $_)
+      LastWriteTime = (Get-Item $_).LastWriteTimeUtc
+    }
+  } | Sort-Object -Property Score, LastWriteTime -Descending
+
+  return $ranked[0].Path
+}
+
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $RepoRoot
 
 Write-Step "OBS Overtime Windows build"
 Write-Host "Repo          : $RepoRoot"
 Write-Host "Configuration : $Configuration"
 Write-Host "Build dir     : $BuildDir"
-
-if (-not [System.Environment]::Is64BitOperatingSystem) {
-  throw "64-bit Windows is required."
-}
 
 if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
   throw "cmake was not found in PATH."
@@ -170,31 +237,12 @@ Write-Step "Resolving dependencies"
 
 $ResolvedObsSdk = Find-ObsSdk -ExplicitObsSdkDir $ObsSdkDir -ExplicitObsStudioDir $ObsStudioDir -RepoRoot $RepoRoot
 if (-not $ResolvedObsSdk) {
-  throw @"
-Could not find OBS development files.
-
-Pass one of these:
-  -ObsSdkDir C:\path\to\obs-sdk-or-plugin-deps
-  -ObsStudioDir C:\path\to\obs-studio-build-or-install
-
-The directory must contain:
-  include\obs-module.h
-  obs.lib or libobs.lib
-  obs-frontend-api.lib
-"@
+  throw "Could not find OBS development files. Pass -ObsSdkDir C:\path\to\plugin-deps-or-obs-build."
 }
 
 $ResolvedQt = Find-QtPrefix -ExplicitQt6Path $Qt6Path -ObsSdk $ResolvedObsSdk -RepoRoot $RepoRoot
 if (-not $ResolvedQt) {
-  throw @"
-Could not find Qt6.
-
-Pass:
-  -Qt6Path C:\Qt\6.x.x\msvc2019_64
-
-The directory must contain:
-  lib\cmake\Qt6\Qt6Config.cmake
-"@
+  throw "Could not find Qt6. Pass -Qt6Path C:\path\to\plugin-deps-YYYY-MM-DD-qt6-x64."
 }
 
 $Qt6ConfigDir = Join-Path $ResolvedQt "lib\cmake\Qt6"
@@ -204,6 +252,11 @@ Write-Host "OBS SDK       : $ResolvedObsSdk"
 Write-Host "Qt6 prefix    : $ResolvedQt"
 Write-Host "Qt6_DIR       : $Qt6ConfigDir"
 
+if ($ResolvedQt -match '2022-08-02') {
+  Write-Warning "You are building against old Qt deps: $ResolvedQt"
+  Write-Warning "If qobject.h / qtimer.h fails with QtPrivate parser errors, install or select newer OBS Qt6 deps, e.g. plugin-deps-2025-xx-xx-qt6-x64, using -Qt6Path."
+}
+
 Write-Step "Configuring"
 
 $CMakeConfigureArgs = @(
@@ -211,49 +264,38 @@ $CMakeConfigureArgs = @(
   "-B", $BuildDir,
   "-G", $Generator,
   "-A", "x64",
-  "-DENABLE_FRONTEND_API=ON",
-  "-DENABLE_QT=ON",
   "-DOBS_SDK_DIR=$ResolvedObsSdk",
   "-DQt6_DIR=$Qt6ConfigDir",
   "-DCMAKE_PREFIX_PATH=$PrefixPath"
 )
 
 & cmake @CMakeConfigureArgs
-if ($LASTEXITCODE -ne 0) {
-  throw "CMake configure failed with exit code $LASTEXITCODE."
-}
+if ($LASTEXITCODE -ne 0) { throw "CMake configure failed with exit code $LASTEXITCODE." }
 
 Write-Step "Building"
-
 & cmake --build $BuildDir --config $Configuration --parallel
-if ($LASTEXITCODE -ne 0) {
-  throw "Build failed with exit code $LASTEXITCODE."
-}
+if ($LASTEXITCODE -ne 0) { throw "Build failed with exit code $LASTEXITCODE." }
 
-$PackageDir = Join-Path $RepoRoot "$BuildDir"
+$PackageDir = Join-Path $RepoRoot "$BuildDir\obs-overtime"
 Write-Step "Build complete"
-Write-Host "Build dir: $PackageDir" -ForegroundColor Green
+Write-Host "Package dir: $PackageDir" -ForegroundColor Green
 
 if ($InstallToObs) {
-  if (-not (Test-Path $ObsInstallDir)) {
-    throw "OBS install dir not found: $ObsInstallDir"
-  }
+  if (-not (Test-Path $ObsInstallDir)) { throw "OBS install dir not found: $ObsInstallDir" }
 
-  $BuiltDll = Get-ChildItem -Path $BuildDir -Recurse -Filter "obs-overtime.dll" | Select-Object -First 1
-  if (-not $BuiltDll) {
-    throw "Could not find built obs-overtime.dll under $BuildDir"
-  }
+  $BuiltDll = Get-ChildItem -Path $PackageDir -Recurse -Filter "obs-overtime.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $BuiltDll) { throw "Could not find built obs-overtime.dll under $PackageDir" }
 
   $TargetBinDir = Join-Path $ObsInstallDir "obs-plugins\64bit"
   New-Item -ItemType Directory -Force -Path $TargetBinDir | Out-Null
   Copy-Item -Force $BuiltDll.FullName (Join-Path $TargetBinDir "obs-overtime.dll")
 
-  $StagedData = Join-Path $RepoRoot "data"
+  $StagedData = Join-Path $PackageDir "data"
   if (Test-Path $StagedData) {
-    $TargetDataDir = Join-Path $ObsInstallDir "data\obs-plugins\obs-overtime"
-    New-Item -ItemType Directory -Force -Path $TargetDataDir | Out-Null
-    Copy-Item -Recurse -Force "$StagedData\*" $TargetDataDir
+    $ObsDataDir = Join-Path $ObsInstallDir "data\obs-plugins\obs-overtime"
+    New-Item -ItemType Directory -Force -Path $ObsDataDir | Out-Null
+    Copy-Item -Recurse -Force "$StagedData\*" $ObsDataDir
   }
 
-  Write-Host "Installed to OBS: $ObsInstallDir" -ForegroundColor Green
+  Write-Host "Installed to OBS." -ForegroundColor Green
 }

@@ -1,3 +1,8 @@
+#include <QAction>
+#include <QMainWindow>
+#include <QPointer>
+#include <QWidget>
+
 #include "plugin-config.hpp"
 #include "overlay-controller.hpp"
 #include "settings-dialog.hpp"
@@ -5,10 +10,6 @@
 
 #include <obs-module.h>
 #include <obs-frontend-api.h>
-
-#include <QAction>
-#include <QMainWindow>
-#include <QPointer>
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("projector-time-overlay", "en-US")
@@ -43,26 +44,21 @@ static void show_settings_dialog()
 
 bool obs_module_load(void)
 {
-    // Load persisted settings (keeps defaults when no file exists).
     PluginConfig::instance().load();
 
-    // Register the media-source selection dock.
     MediaDock *dock = new MediaDock();
     dock->setObjectName("projectorTimeOverlayMediaDock");
     obs_frontend_add_dock_by_id(kDockId, obs_module_text("Dock.Title"), dock);
 
-    // Add the settings menu action under Tools.
     QAction *action = static_cast<QAction *>(
         obs_frontend_add_tools_menu_qaction(obs_module_text("Menu.Settings")));
     if (action) {
-        QAction::connect(action, &QAction::triggered,
+        QObject::connect(action, &QAction::triggered,
                          []() { show_settings_dialog(); });
     }
 
-    // Listen for streaming/recording/media/exit events.
     obs_frontend_add_event_callback(overlay_frontend_event, nullptr);
 
-    // Start the overlay refresh loop once the UI is fully up.
     OverlayController::instance()->start();
 
     blog(LOG_INFO, "[projector-time-overlay] loaded (v%s)", PLUGIN_VERSION);

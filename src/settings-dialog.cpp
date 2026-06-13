@@ -3,8 +3,6 @@
 #include "overlay-controller.hpp"
 #include "projector-tracker.hpp"
 
-#include <obs-module.h>
-
 #include <QVBoxLayout>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -18,6 +16,8 @@
 #include <QLabel>
 #include <QColorDialog>
 #include <QDialogButtonBox>
+
+#include <obs-module.h>
 
 static QColor argbToColor(unsigned int argb)
 {

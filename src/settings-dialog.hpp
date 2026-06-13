@@ -18,7 +18,7 @@ class SettingsDialog : public QDialog {
 public:
     explicit SettingsDialog(QWidget *parent = nullptr);
 
-private slots:
+private Q_SLOTS:
     void onAccept();
     void pickTextColor();
     void pickBackgroundColor();

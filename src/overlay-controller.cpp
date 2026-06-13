@@ -5,13 +5,13 @@
 #include "plugin-config.hpp"
 #include "time-utils.hpp"
 
-#include <obs-frontend-api.h>
-#include <obs.h>
-#include <media-io/video-io.h>
-
 #include <QTimer>
 #include <QStringList>
 #include <QSet>
+
+#include <obs-frontend-api.h>
+#include <obs.h>
+#include <media-io/video-io.h>
 
 static const int kRefreshIntervalMs = 200;
 

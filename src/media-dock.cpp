@@ -3,14 +3,14 @@
 #include "plugin-config.hpp"
 #include "time-utils.hpp"
 
-#include <obs-module.h>
-
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QListWidget>
 #include <QTimer>
 #include <QSet>
 #include <QString>
+
+#include <obs-module.h>
 
 MediaDock::MediaDock(QWidget *parent) : QWidget(parent)
 {
