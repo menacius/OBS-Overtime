@@ -43,6 +43,8 @@ private:
         QString id;
         QString text;
         OverlayValuePlacement placement;
+        bool isMediaValue = false;
+        bool warningBackground = false;
     };
 
     QList<DisplayValue> buildDisplayValues() const;

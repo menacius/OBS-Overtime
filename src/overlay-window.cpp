@@ -45,6 +45,20 @@ void OverlayWindow::applyStyle(const PluginConfig &cfg)
     update();
 }
 
+void OverlayWindow::setBackgroundOverride(bool enabled, unsigned int argb,
+                                          int opacity)
+{
+    QColor bg = fromArgb(argb);
+    bg.setAlpha(qBound(0, opacity, 255));
+
+    if (m_hasBackgroundOverride == enabled && m_overrideBgColor == bg)
+        return;
+
+    m_hasBackgroundOverride = enabled;
+    m_overrideBgColor = bg;
+    update();
+}
+
 QSize OverlayWindow::contentSize() const
 {
     QFontMetrics fm(m_font);
@@ -101,7 +115,7 @@ void OverlayWindow::paintEvent(QPaintEvent *)
     // Rounded background panel.
     QRectF panel = rect();
     painter.setPen(Qt::NoPen);
-    painter.setBrush(m_bgColor);
+    painter.setBrush(m_hasBackgroundOverride ? m_overrideBgColor : m_bgColor);
     painter.drawRoundedRect(panel, 6.0, 6.0);
 
     // Text.

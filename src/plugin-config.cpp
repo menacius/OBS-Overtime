@@ -126,6 +126,18 @@ void PluginConfig::load()
     showRecording = obs_data_get_bool(data, "show_recording");
     showMediaElapsed = obs_data_get_bool(data, "show_media_elapsed");
     showMediaRemaining = obs_data_get_bool(data, "show_media_remaining");
+    if (obs_data_has_user_value(data, "media_times_only_when_active_playing"))
+        mediaTimesOnlyWhenActivePlaying =
+            obs_data_get_bool(data, "media_times_only_when_active_playing");
+    if (obs_data_has_user_value(data, "media_warning_threshold_seconds"))
+        mediaWarningThresholdSeconds =
+            (int)obs_data_get_int(data, "media_warning_threshold_seconds");
+    if (obs_data_has_user_value(data, "media_warning_background_color"))
+        mediaWarningBackgroundColor =
+            (uint32_t)obs_data_get_int(data, "media_warning_background_color");
+    if (obs_data_has_user_value(data, "media_warning_background_opacity"))
+        mediaWarningBackgroundOpacity =
+            (int)obs_data_get_int(data, "media_warning_background_opacity");
 
     if (obs_data_has_user_value(data, "text_color"))
         textColor = (uint32_t)obs_data_get_int(data, "text_color");
@@ -193,6 +205,14 @@ void PluginConfig::save() const
     obs_data_set_bool(data, "show_recording", showRecording);
     obs_data_set_bool(data, "show_media_elapsed", showMediaElapsed);
     obs_data_set_bool(data, "show_media_remaining", showMediaRemaining);
+    obs_data_set_bool(data, "media_times_only_when_active_playing",
+                      mediaTimesOnlyWhenActivePlaying);
+    obs_data_set_int(data, "media_warning_threshold_seconds",
+                     mediaWarningThresholdSeconds);
+    obs_data_set_int(data, "media_warning_background_color",
+                     mediaWarningBackgroundColor);
+    obs_data_set_int(data, "media_warning_background_opacity",
+                     mediaWarningBackgroundOpacity);
     obs_data_set_int(data, "text_color", textColor);
     obs_data_set_int(data, "background_color", backgroundColor);
     obs_data_set_int(data, "background_opacity", backgroundOpacity);

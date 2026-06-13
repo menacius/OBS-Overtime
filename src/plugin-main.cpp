@@ -1,6 +1,7 @@
 #include <QAction>
 #include <QMainWindow>
 #include <QPointer>
+#include <QObject>
 #include <QWidget>
 
 #include "plugin-config.hpp"
@@ -17,6 +18,14 @@ OBS_MODULE_USE_DEFAULT_LOCALE("projector-time-overlay", "en-US")
 static const char *kDockId = "projector_time_overlay_media_dock";
 
 static QPointer<SettingsDialog> g_settingsDialog;
+
+class SettingsActionHandler : public QObject {
+    Q_OBJECT
+public Q_SLOTS:
+    void showSettingsDialog();
+};
+
+static SettingsActionHandler *g_settingsActionHandler = nullptr;
 
 MODULE_EXPORT const char *obs_module_description(void)
 {
@@ -42,6 +51,11 @@ static void show_settings_dialog()
     g_settingsDialog->activateWindow();
 }
 
+void SettingsActionHandler::showSettingsDialog()
+{
+    show_settings_dialog();
+}
+
 bool obs_module_load(void)
 {
     PluginConfig::instance().load();
@@ -53,8 +67,10 @@ bool obs_module_load(void)
     QAction *action = static_cast<QAction *>(
         obs_frontend_add_tools_menu_qaction(obs_module_text("Menu.Settings")));
     if (action) {
-        QObject::connect(action, &QAction::triggered,
-                         []() { show_settings_dialog(); });
+        if (!g_settingsActionHandler)
+            g_settingsActionHandler = new SettingsActionHandler();
+        QObject::connect(action, SIGNAL(triggered()), g_settingsActionHandler,
+                         SLOT(showSettingsDialog()));
     }
 
     obs_frontend_add_event_callback(overlay_frontend_event, nullptr);
@@ -72,3 +88,5 @@ void obs_module_unload(void)
     PluginConfig::instance().save();
     blog(LOG_INFO, "[projector-time-overlay] unloaded");
 }
+
+#include "plugin-main.moc"

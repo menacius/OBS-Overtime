@@ -38,6 +38,17 @@ struct PluginConfig {
     bool showMediaElapsed = false;
     bool showMediaRemaining = false;
 
+    // When enabled, media elapsed/remaining values are shown only if the
+    // selected media source is both active/visible and currently playing.
+    bool mediaTimesOnlyWhenActivePlaying = false;
+
+    // Media end warning. When remaining time is at or below this threshold,
+    // media time backgrounds blink once per second between the normal
+    // background and this warning background. Set threshold to 0 to disable.
+    int mediaWarningThresholdSeconds = 0;
+    uint32_t mediaWarningBackgroundColor = 0xFFFF0000;
+    int mediaWarningBackgroundOpacity = 200;
+
     // Colors are stored as 0xAARRGGBB.
     uint32_t textColor = 0xFFFFFFFF;
     uint32_t backgroundColor = 0xFF000000;

@@ -93,8 +93,11 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
     m_showMediaRemaining = new QCheckBox(obs_module_text("Settings.ShowMediaRemaining"), valuesGroup);
     valuesLayout->addWidget(m_showStreaming);
     valuesLayout->addWidget(m_showRecording);
+    m_mediaTimesOnlyWhenActivePlaying = new QCheckBox(
+        obs_module_text("Settings.MediaOnlyWhenActivePlaying"), valuesGroup);
     valuesLayout->addWidget(m_showMediaElapsed);
     valuesLayout->addWidget(m_showMediaRemaining);
+    valuesLayout->addWidget(m_mediaTimesOnlyWhenActivePlaying);
     root->addWidget(valuesGroup);
 
     // Colors group
@@ -111,8 +114,28 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
     colorForm->addRow(obs_module_text("Settings.BackgroundOpacity"), m_bgOpacity);
     colorForm->addRow(obs_module_text("Settings.BackgroundPadding"), m_bgPadding);
     root->addWidget(colorGroup);
-    connect(m_textColorBtn, &QPushButton::clicked, this, &SettingsDialog::pickTextColor);
-    connect(m_bgColorBtn, &QPushButton::clicked, this, &SettingsDialog::pickBackgroundColor);
+    QObject::connect(m_textColorBtn, SIGNAL(clicked()), this, SLOT(pickTextColor()));
+    QObject::connect(m_bgColorBtn, SIGNAL(clicked()), this, SLOT(pickBackgroundColor()));
+
+    // Media end warning group
+    auto *mediaWarningGroup = new QGroupBox(
+        obs_module_text("Settings.Group.MediaWarning"), this);
+    auto *mediaWarningForm = new QFormLayout(mediaWarningGroup);
+    m_mediaWarningThreshold = new QSpinBox(mediaWarningGroup);
+    m_mediaWarningThreshold->setRange(0, 86400);
+    m_mediaWarningThreshold->setSuffix(QStringLiteral(" s"));
+    m_mediaWarningBgColorBtn = new QPushButton(mediaWarningGroup);
+    m_mediaWarningBgOpacity = new QSlider(Qt::Horizontal, mediaWarningGroup);
+    m_mediaWarningBgOpacity->setRange(0, 255);
+    mediaWarningForm->addRow(obs_module_text("Settings.MediaWarningThreshold"),
+                             m_mediaWarningThreshold);
+    mediaWarningForm->addRow(obs_module_text("Settings.MediaWarningBackgroundColor"),
+                             m_mediaWarningBgColorBtn);
+    mediaWarningForm->addRow(obs_module_text("Settings.MediaWarningBackgroundOpacity"),
+                             m_mediaWarningBgOpacity);
+    root->addWidget(mediaWarningGroup);
+    QObject::connect(m_mediaWarningBgColorBtn, SIGNAL(clicked()), this,
+                     SLOT(pickMediaWarningBackgroundColor()));
 
     // Per-value position group
     auto *posGroup = new QGroupBox(obs_module_text("Settings.Group.ValuePositions"), this);
@@ -156,13 +179,13 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
     projLayout->addWidget(m_projectorList);
     projLayout->addWidget(refreshBtn);
     root->addWidget(projGroup);
-    connect(refreshBtn, &QPushButton::clicked, this, &SettingsDialog::refreshProjectorList);
+    QObject::connect(refreshBtn, SIGNAL(clicked()), this, SLOT(refreshProjectorList()));
 
     auto *buttons = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     root->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::accepted, this, &SettingsDialog::onAccept);
-    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    QObject::connect(buttons, SIGNAL(accepted()), this, SLOT(onAccept()));
+    QObject::connect(buttons, SIGNAL(rejected()), this, SLOT(reject()));
 
     loadFromConfig();
     refreshProjectorList();
@@ -189,6 +212,8 @@ void SettingsDialog::loadFromConfig()
     m_showRecording->setChecked(cfg.showRecording);
     m_showMediaElapsed->setChecked(cfg.showMediaElapsed);
     m_showMediaRemaining->setChecked(cfg.showMediaRemaining);
+    m_mediaTimesOnlyWhenActivePlaying->setChecked(
+        cfg.mediaTimesOnlyWhenActivePlaying);
 
     m_textColor = cfg.textColor;
     m_bgColor = cfg.backgroundColor;
@@ -196,6 +221,11 @@ void SettingsDialog::loadFromConfig()
     updateColorButton(m_bgColorBtn, m_bgColor);
     m_bgOpacity->setValue(cfg.backgroundOpacity);
     m_bgPadding->setValue(cfg.backgroundPadding);
+
+    m_mediaWarningThreshold->setValue(cfg.mediaWarningThresholdSeconds);
+    m_mediaWarningBgColor = cfg.mediaWarningBackgroundColor;
+    updateColorButton(m_mediaWarningBgColorBtn, m_mediaWarningBgColor);
+    m_mediaWarningBgOpacity->setValue(cfg.mediaWarningBackgroundOpacity);
 
     setPlacementControls(m_streamingPosition, m_streamingOffset, cfg.streamingPlacement);
     setPlacementControls(m_recordingPosition, m_recordingOffset, cfg.recordingPlacement);
@@ -222,6 +252,17 @@ void SettingsDialog::pickBackgroundColor()
     if (c.isValid()) {
         m_bgColor = colorToArgb(c);
         updateColorButton(m_bgColorBtn, m_bgColor);
+    }
+}
+
+void SettingsDialog::pickMediaWarningBackgroundColor()
+{
+    QColor c = QColorDialog::getColor(argbToColor(m_mediaWarningBgColor), this,
+                                      "Media warning background color",
+                                      QColorDialog::ShowAlphaChannel);
+    if (c.isValid()) {
+        m_mediaWarningBgColor = colorToArgb(c);
+        updateColorButton(m_mediaWarningBgColorBtn, m_mediaWarningBgColor);
     }
 }
 
@@ -256,6 +297,11 @@ void SettingsDialog::onAccept()
     cfg.showRecording = m_showRecording->isChecked();
     cfg.showMediaElapsed = m_showMediaElapsed->isChecked();
     cfg.showMediaRemaining = m_showMediaRemaining->isChecked();
+    cfg.mediaTimesOnlyWhenActivePlaying =
+        m_mediaTimesOnlyWhenActivePlaying->isChecked();
+    cfg.mediaWarningThresholdSeconds = m_mediaWarningThreshold->value();
+    cfg.mediaWarningBackgroundColor = m_mediaWarningBgColor;
+    cfg.mediaWarningBackgroundOpacity = m_mediaWarningBgOpacity->value();
     cfg.textColor = m_textColor;
     cfg.backgroundColor = m_bgColor;
     cfg.backgroundOpacity = m_bgOpacity->value();

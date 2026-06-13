@@ -9,6 +9,7 @@
 #include <QStringList>
 #include <QList>
 #include <QSet>
+#include <QDateTime>
 
 #include <obs-frontend-api.h>
 #include <obs.h>
@@ -54,7 +55,7 @@ OverlayController::OverlayController(QObject *parent) : QObject(parent)
     m_tracker = new ProjectorTracker(this);
     m_timer = new QTimer(this);
     m_timer->setInterval(kRefreshIntervalMs);
-    connect(m_timer, &QTimer::timeout, this, &OverlayController::refresh);
+    QObject::connect(m_timer, SIGNAL(timeout()), this, SLOT(refresh()));
 }
 
 OverlayController::~OverlayController()
@@ -110,7 +111,9 @@ QList<OverlayController::DisplayValue> OverlayController::buildDisplayValues() c
         values.push_back({QStringLiteral("streaming"),
                           QStringLiteral("STREAM  %1")
                               .arg(QString::fromStdString(formatDuration(ms))),
-                          cfg.streamingPlacement});
+                          cfg.streamingPlacement,
+                          false,
+                          false});
     }
 
     // Recording duration (derived from the active recording output).
@@ -122,7 +125,9 @@ QList<OverlayController::DisplayValue> OverlayController::buildDisplayValues() c
         values.push_back({QStringLiteral("recording"),
                           QStringLiteral("REC  %1")
                               .arg(QString::fromStdString(formatDuration(ms))),
-                          cfg.recordingPlacement});
+                          cfg.recordingPlacement,
+                          false,
+                          false});
     }
 
     // Media elapsed / remaining.
@@ -130,19 +135,28 @@ QList<OverlayController::DisplayValue> OverlayController::buildDisplayValues() c
         std::string name;
         int64_t elapsed = 0, remaining = 0;
         if (MediaManager::getTimes(name, elapsed, remaining)) {
+            const bool warningEnabled = cfg.mediaWarningThresholdSeconds > 0 &&
+                remaining <= (int64_t)cfg.mediaWarningThresholdSeconds * 1000;
+            const bool warningBlinkOn = warningEnabled &&
+                ((QDateTime::currentSecsSinceEpoch() % 2) == 0);
+
             if (cfg.showMediaElapsed) {
                 values.push_back({QStringLiteral("media_elapsed"),
                                   QStringLiteral("MEDIA  %1")
                                       .arg(QString::fromStdString(
                                           formatDuration(elapsed))),
-                                  cfg.mediaElapsedPlacement});
+                                  cfg.mediaElapsedPlacement,
+                                  true,
+                                  warningBlinkOn});
             }
             if (cfg.showMediaRemaining) {
                 values.push_back({QStringLiteral("media_remaining"),
                                   QStringLiteral("LEFT  -%1")
                                       .arg(QString::fromStdString(
                                           formatDuration(remaining))),
-                                  cfg.mediaRemainingPlacement});
+                                  cfg.mediaRemainingPlacement,
+                                  true,
+                                  warningBlinkOn});
             }
         }
     }
@@ -186,6 +200,9 @@ void OverlayController::refresh()
             }
 
             overlay->setText(value.text);
+            overlay->setBackgroundOverride(value.warningBackground,
+                                           cfg.mediaWarningBackgroundColor,
+                                           cfg.mediaWarningBackgroundOpacity);
             overlay->positionWithin(proj.geometry, value.placement);
             if (!overlay->isVisible())
                 overlay->show();

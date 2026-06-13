@@ -24,6 +24,7 @@ private Q_SLOTS:
     void onAccept();
     void pickTextColor();
     void pickBackgroundColor();
+    void pickMediaWarningBackgroundColor();
     void refreshProjectorList();
 
 private:
@@ -43,6 +44,7 @@ private:
     QCheckBox *m_showRecording = nullptr;
     QCheckBox *m_showMediaElapsed = nullptr;
     QCheckBox *m_showMediaRemaining = nullptr;
+    QCheckBox *m_mediaTimesOnlyWhenActivePlaying = nullptr;
 
     QPushButton *m_textColorBtn = nullptr;
     QPushButton *m_bgColorBtn = nullptr;
@@ -58,8 +60,13 @@ private:
     QComboBox *m_mediaRemainingPosition = nullptr;
     QSpinBox *m_mediaRemainingOffset = nullptr;
 
+    QSpinBox *m_mediaWarningThreshold = nullptr;
+    QPushButton *m_mediaWarningBgColorBtn = nullptr;
+    QSlider *m_mediaWarningBgOpacity = nullptr;
+
     QListWidget *m_projectorList = nullptr;
 
     unsigned int m_textColor = 0xFFFFFFFF;
     unsigned int m_bgColor = 0xFF000000;
+    unsigned int m_mediaWarningBgColor = 0xFFFF0000;
 };

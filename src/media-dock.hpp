@@ -20,6 +20,7 @@ private Q_SLOTS:
     void refreshList();
     void updateStatus();
     void onItemChanged(class QListWidgetItem *item);
+    void onRefreshTimer();
 
 private:
     QListWidget *m_list = nullptr;

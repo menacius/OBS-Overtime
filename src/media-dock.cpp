@@ -23,7 +23,8 @@ MediaDock::MediaDock(QWidget *parent) : QWidget(parent)
 
     m_list = new QListWidget(this);
     layout->addWidget(m_list, 1);
-    connect(m_list, &QListWidget::itemChanged, this, &MediaDock::onItemChanged);
+    QObject::connect(m_list, SIGNAL(itemChanged(QListWidgetItem*)),
+                     this, SLOT(onItemChanged(QListWidgetItem*)));
 
     m_status = new QLabel(this);
     m_status->setWordWrap(true);
@@ -33,10 +34,7 @@ MediaDock::MediaDock(QWidget *parent) : QWidget(parent)
     // when sources are added/removed/renamed externally.
     m_timer = new QTimer(this);
     m_timer->setInterval(750);
-    connect(m_timer, &QTimer::timeout, this, [this]() {
-        refreshList();
-        updateStatus();
-    });
+    QObject::connect(m_timer, SIGNAL(timeout()), this, SLOT(onRefreshTimer()));
     m_timer->start();
 
     refreshList();
@@ -107,4 +105,10 @@ void MediaDock::updateStatus()
                               .arg(obs_module_text("Dock.Active"))
                               .arg(obs_module_text("Dock.None")));
     }
+}
+
+void MediaDock::onRefreshTimer()
+{
+    refreshList();
+    updateStatus();
 }

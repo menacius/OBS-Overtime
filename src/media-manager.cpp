@@ -72,6 +72,12 @@ std::string MediaManager::resolveActiveSourceName()
         if (src->active && src->playing)
             return src->name;
     }
+
+    // Optional strict mode: do not show media times unless the selected
+    // media source is both active/visible and playing.
+    if (cfg.mediaTimesOnlyWhenActivePlaying)
+        return "";
+
     // Priority 2: a currently active/visible source.
     for (const auto *src : enabled) {
         if (src->active)
