@@ -2,6 +2,8 @@
 
 #include <QDialog>
 
+#include "plugin-config.hpp"
+
 class QComboBox;
 class QSpinBox;
 class QCheckBox;
@@ -27,6 +29,11 @@ private Q_SLOTS:
 private:
     void loadFromConfig();
     void updateColorButton(QPushButton *button, unsigned int argb);
+    void addPositionItems(QComboBox *combo);
+    void setPlacementControls(QComboBox *positionCombo, QSpinBox *offsetSpin,
+                              const OverlayValuePlacement &placement);
+    void readPlacementControls(QComboBox *positionCombo, QSpinBox *offsetSpin,
+                               OverlayValuePlacement &placement) const;
 
     QCheckBox *m_enabled = nullptr;
     QFontComboBox *m_fontFamily = nullptr;
@@ -42,8 +49,14 @@ private:
     QSlider *m_bgOpacity = nullptr;
     QSpinBox *m_bgPadding = nullptr;
 
-    QComboBox *m_position = nullptr;
-    QSpinBox *m_offset = nullptr;
+    QComboBox *m_streamingPosition = nullptr;
+    QSpinBox *m_streamingOffset = nullptr;
+    QComboBox *m_recordingPosition = nullptr;
+    QSpinBox *m_recordingOffset = nullptr;
+    QComboBox *m_mediaElapsedPosition = nullptr;
+    QSpinBox *m_mediaElapsedOffset = nullptr;
+    QComboBox *m_mediaRemainingPosition = nullptr;
+    QSpinBox *m_mediaRemainingOffset = nullptr;
 
     QListWidget *m_projectorList = nullptr;
 

@@ -73,6 +73,28 @@ bool PluginConfig::isProjectorTargeted(const std::string &name) const
                      name) != targetProjectors.end();
 }
 
+
+static void load_placement(obs_data_t *data, const char *positionKey,
+                           const char *offsetKey,
+                           OverlayValuePlacement &placement)
+{
+    if (obs_data_has_user_value(data, positionKey)) {
+        placement.position = overlayPositionFromString(
+            obs_data_get_string(data, positionKey));
+    }
+    if (obs_data_has_user_value(data, offsetKey))
+        placement.edgeOffset = (int)obs_data_get_int(data, offsetKey);
+}
+
+static void save_placement(obs_data_t *data, const char *positionKey,
+                           const char *offsetKey,
+                           const OverlayValuePlacement &placement)
+{
+    obs_data_set_string(data, positionKey,
+                        overlayPositionToString(placement.position));
+    obs_data_set_int(data, offsetKey, placement.edgeOffset);
+}
+
 static std::string config_path()
 {
     char *path = obs_module_config_path(kConfigFile);
@@ -114,10 +136,10 @@ void PluginConfig::load()
     if (obs_data_has_user_value(data, "background_padding"))
         backgroundPadding = (int)obs_data_get_int(data, "background_padding");
 
-    position = overlayPositionFromString(
-        obs_data_get_string(data, "position"));
-    if (obs_data_has_user_value(data, "edge_offset"))
-        edgeOffset = (int)obs_data_get_int(data, "edge_offset");
+    load_placement(data, "streaming_position", "streaming_edge_offset", streamingPlacement);
+    load_placement(data, "recording_position", "recording_edge_offset", recordingPlacement);
+    load_placement(data, "media_elapsed_position", "media_elapsed_edge_offset", mediaElapsedPlacement);
+    load_placement(data, "media_remaining_position", "media_remaining_edge_offset", mediaRemainingPlacement);
 
     targetProjectors.clear();
     obs_data_array_t *projArr = obs_data_get_array(data, "target_projectors");
@@ -175,8 +197,10 @@ void PluginConfig::save() const
     obs_data_set_int(data, "background_color", backgroundColor);
     obs_data_set_int(data, "background_opacity", backgroundOpacity);
     obs_data_set_int(data, "background_padding", backgroundPadding);
-    obs_data_set_string(data, "position", overlayPositionToString(position));
-    obs_data_set_int(data, "edge_offset", edgeOffset);
+    save_placement(data, "streaming_position", "streaming_edge_offset", streamingPlacement);
+    save_placement(data, "recording_position", "recording_edge_offset", recordingPlacement);
+    save_placement(data, "media_elapsed_position", "media_elapsed_edge_offset", mediaElapsedPlacement);
+    save_placement(data, "media_remaining_position", "media_remaining_edge_offset", mediaRemainingPlacement);
 
     obs_data_array_t *projArr = obs_data_array_create();
     for (const auto &n : targetProjectors) {

@@ -17,6 +17,11 @@ enum class OverlayPosition {
     Center,
 };
 
+struct OverlayValuePlacement {
+    OverlayPosition position = OverlayPosition::BottomRight;
+    int edgeOffset = 24;
+};
+
 // Persistent configuration for the Projector Time Overlay plugin.
 // All settings are saved to / loaded from a JSON file in the module
 // config directory so they survive across OBS sessions.
@@ -39,8 +44,12 @@ struct PluginConfig {
     int backgroundOpacity = 160;  // 0-255 applied on top of bg color alpha
     int backgroundPadding = 8;    // px
 
-    OverlayPosition position = OverlayPosition::BottomRight;
-    int edgeOffset = 24;  // px margin from the chosen edge(s)
+    // Per-value placement. Each displayed value can be positioned independently.
+    // The legacy global position/edge_offset keys are ignored on save.
+    OverlayValuePlacement streamingPlacement{OverlayPosition::BottomRight, 24};
+    OverlayValuePlacement recordingPlacement{OverlayPosition::BottomLeft, 24};
+    OverlayValuePlacement mediaElapsedPlacement{OverlayPosition::TopRight, 24};
+    OverlayValuePlacement mediaRemainingPlacement{OverlayPosition::TopLeft, 24};
 
     // Names of projector windows the overlay should attach to.
     // Empty means "all detected projectors".

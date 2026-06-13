@@ -7,6 +7,7 @@
 
 #include <QTimer>
 #include <QStringList>
+#include <QList>
 #include <QSet>
 
 #include <obs-frontend-api.h>
@@ -95,10 +96,10 @@ void OverlayController::clearOverlays()
     m_overlays.clear();
 }
 
-QString OverlayController::buildOverlayText() const
+QList<OverlayController::DisplayValue> OverlayController::buildDisplayValues() const
 {
     const PluginConfig &cfg = PluginConfig::instance();
-    QStringList lines;
+    QList<DisplayValue> values;
 
     // Streaming duration (derived from the active streaming output).
     if (cfg.showStreaming && obs_frontend_streaming_active()) {
@@ -106,8 +107,10 @@ QString OverlayController::buildOverlayText() const
         int64_t ms = output_elapsed_ms(out);
         if (out)
             obs_output_release(out);
-        lines << QStringLiteral("STREAM  %1")
-                     .arg(QString::fromStdString(formatDuration(ms)));
+        values.push_back({QStringLiteral("streaming"),
+                          QStringLiteral("STREAM  %1")
+                              .arg(QString::fromStdString(formatDuration(ms))),
+                          cfg.streamingPlacement});
     }
 
     // Recording duration (derived from the active recording output).
@@ -116,27 +119,35 @@ QString OverlayController::buildOverlayText() const
         int64_t ms = output_elapsed_ms(out);
         if (out)
             obs_output_release(out);
-        lines << QStringLiteral("REC  %1")
-                     .arg(QString::fromStdString(formatDuration(ms)));
+        values.push_back({QStringLiteral("recording"),
+                          QStringLiteral("REC  %1")
+                              .arg(QString::fromStdString(formatDuration(ms))),
+                          cfg.recordingPlacement});
     }
 
-    // Media elapsed / remaining
+    // Media elapsed / remaining.
     if (cfg.showMediaElapsed || cfg.showMediaRemaining) {
         std::string name;
         int64_t elapsed = 0, remaining = 0;
         if (MediaManager::getTimes(name, elapsed, remaining)) {
-            if (cfg.showMediaElapsed)
-                lines << QStringLiteral("MEDIA  %1")
-                             .arg(QString::fromStdString(
-                                 formatDuration(elapsed)));
-            if (cfg.showMediaRemaining)
-                lines << QStringLiteral("LEFT  -%1")
-                             .arg(QString::fromStdString(
-                                 formatDuration(remaining)));
+            if (cfg.showMediaElapsed) {
+                values.push_back({QStringLiteral("media_elapsed"),
+                                  QStringLiteral("MEDIA  %1")
+                                      .arg(QString::fromStdString(
+                                          formatDuration(elapsed))),
+                                  cfg.mediaElapsedPlacement});
+            }
+            if (cfg.showMediaRemaining) {
+                values.push_back({QStringLiteral("media_remaining"),
+                                  QStringLiteral("LEFT  -%1")
+                                      .arg(QString::fromStdString(
+                                          formatDuration(remaining))),
+                                  cfg.mediaRemainingPlacement});
+            }
         }
     }
 
-    return lines.join('\n');
+    return values;
 }
 
 void OverlayController::refresh()
@@ -151,10 +162,8 @@ void OverlayController::refresh()
     // Detect currently present projector windows.
     const QList<ProjectorInfo> projectors = m_tracker->detectProjectors();
 
-    const QString text = buildOverlayText();
-    const bool hasText = !text.isEmpty();
-
-    QSet<quintptr> seen;
+    const QList<DisplayValue> values = buildDisplayValues();
+    QSet<QString> seen;
 
     for (const ProjectorInfo &proj : projectors) {
         if (!proj.window || !proj.visible)
@@ -162,29 +171,29 @@ void OverlayController::refresh()
         if (!cfg.isProjectorTargeted(proj.name.toStdString()))
             continue;
 
-        const quintptr key = (quintptr)proj.window.data();
-        seen.insert(key);
+        const quintptr projectorKey = (quintptr)proj.window.data();
 
-        OverlayWindow *overlay = m_overlays.value(key).data();
-        if (!overlay) {
-            overlay = new OverlayWindow();
-            overlay->applyStyle(cfg);
-            m_overlays.insert(key, overlay);
+        for (const DisplayValue &value : values) {
+            const QString key = QString::number(projectorKey, 16) +
+                                QStringLiteral(":") + value.id;
+            seen.insert(key);
+
+            OverlayWindow *overlay = m_overlays.value(key).data();
+            if (!overlay) {
+                overlay = new OverlayWindow();
+                overlay->applyStyle(cfg);
+                m_overlays.insert(key, overlay);
+            }
+
+            overlay->setText(value.text);
+            overlay->positionWithin(proj.geometry, value.placement);
+            if (!overlay->isVisible())
+                overlay->show();
+            overlay->raise();
         }
-
-        if (!hasText) {
-            overlay->hide();
-            continue;
-        }
-
-        overlay->setText(text);
-        overlay->positionWithin(proj.geometry, cfg);
-        if (!overlay->isVisible())
-            overlay->show();
-        overlay->raise();
     }
 
-    // Remove overlays whose projector no longer exists (safe destruction).
+    // Remove overlays whose projector/value no longer exists (safe destruction).
     for (auto it = m_overlays.begin(); it != m_overlays.end();) {
         if (!seen.contains(it.key()) || !it.value()) {
             if (it.value())

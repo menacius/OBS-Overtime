@@ -24,7 +24,7 @@ public:
 
     // Computes and applies the on-screen geometry so the overlay sits at
     // the configured position within the given projector rectangle.
-    void positionWithin(const QRect &projectorRect, const PluginConfig &cfg);
+    void positionWithin(const QRect &projectorRect, const OverlayValuePlacement &placement);
 
 protected:
     void paintEvent(QPaintEvent *event) override;

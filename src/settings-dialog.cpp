@@ -31,6 +31,39 @@ static unsigned int colorToArgb(const QColor &c)
            ((unsigned int)c.green() << 8) | (unsigned int)c.blue();
 }
 
+
+void SettingsDialog::addPositionItems(QComboBox *combo)
+{
+    combo->addItem(obs_module_text("Position.Top"), "top");
+    combo->addItem(obs_module_text("Position.Bottom"), "bottom");
+    combo->addItem(obs_module_text("Position.Left"), "left");
+    combo->addItem(obs_module_text("Position.Right"), "right");
+    combo->addItem(obs_module_text("Position.TopLeft"), "top-left");
+    combo->addItem(obs_module_text("Position.TopRight"), "top-right");
+    combo->addItem(obs_module_text("Position.BottomLeft"), "bottom-left");
+    combo->addItem(obs_module_text("Position.BottomRight"), "bottom-right");
+    combo->addItem(obs_module_text("Position.Center"), "center");
+}
+
+void SettingsDialog::setPlacementControls(QComboBox *positionCombo,
+                                          QSpinBox *offsetSpin,
+                                          const OverlayValuePlacement &placement)
+{
+    const int idx = positionCombo->findData(overlayPositionToString(placement.position));
+    if (idx >= 0)
+        positionCombo->setCurrentIndex(idx);
+    offsetSpin->setValue(placement.edgeOffset);
+}
+
+void SettingsDialog::readPlacementControls(QComboBox *positionCombo,
+                                           QSpinBox *offsetSpin,
+                                           OverlayValuePlacement &placement) const
+{
+    placement.position = overlayPositionFromString(
+        positionCombo->currentData().toString().toUtf8().constData());
+    placement.edgeOffset = offsetSpin->value();
+}
+
 SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
 {
     setWindowTitle(obs_module_text("Settings.Title"));
@@ -81,23 +114,38 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
     connect(m_textColorBtn, &QPushButton::clicked, this, &SettingsDialog::pickTextColor);
     connect(m_bgColorBtn, &QPushButton::clicked, this, &SettingsDialog::pickBackgroundColor);
 
-    // Position group
-    auto *posGroup = new QGroupBox(obs_module_text("Settings.Group.Position"), this);
+    // Per-value position group
+    auto *posGroup = new QGroupBox(obs_module_text("Settings.Group.ValuePositions"), this);
     auto *posForm = new QFormLayout(posGroup);
-    m_position = new QComboBox(posGroup);
-    m_position->addItem(obs_module_text("Position.Top"), "top");
-    m_position->addItem(obs_module_text("Position.Bottom"), "bottom");
-    m_position->addItem(obs_module_text("Position.Left"), "left");
-    m_position->addItem(obs_module_text("Position.Right"), "right");
-    m_position->addItem(obs_module_text("Position.TopLeft"), "top-left");
-    m_position->addItem(obs_module_text("Position.TopRight"), "top-right");
-    m_position->addItem(obs_module_text("Position.BottomLeft"), "bottom-left");
-    m_position->addItem(obs_module_text("Position.BottomRight"), "bottom-right");
-    m_position->addItem(obs_module_text("Position.Center"), "center");
-    m_offset = new QSpinBox(posGroup);
-    m_offset->setRange(0, 2000);
-    posForm->addRow(obs_module_text("Settings.Position"), m_position);
-    posForm->addRow(obs_module_text("Settings.Offset"), m_offset);
+
+    m_streamingPosition = new QComboBox(posGroup);
+    addPositionItems(m_streamingPosition);
+    m_streamingOffset = new QSpinBox(posGroup);
+    m_streamingOffset->setRange(0, 2000);
+    posForm->addRow(obs_module_text("Settings.StreamingPosition"), m_streamingPosition);
+    posForm->addRow(obs_module_text("Settings.StreamingOffset"), m_streamingOffset);
+
+    m_recordingPosition = new QComboBox(posGroup);
+    addPositionItems(m_recordingPosition);
+    m_recordingOffset = new QSpinBox(posGroup);
+    m_recordingOffset->setRange(0, 2000);
+    posForm->addRow(obs_module_text("Settings.RecordingPosition"), m_recordingPosition);
+    posForm->addRow(obs_module_text("Settings.RecordingOffset"), m_recordingOffset);
+
+    m_mediaElapsedPosition = new QComboBox(posGroup);
+    addPositionItems(m_mediaElapsedPosition);
+    m_mediaElapsedOffset = new QSpinBox(posGroup);
+    m_mediaElapsedOffset->setRange(0, 2000);
+    posForm->addRow(obs_module_text("Settings.MediaElapsedPosition"), m_mediaElapsedPosition);
+    posForm->addRow(obs_module_text("Settings.MediaElapsedOffset"), m_mediaElapsedOffset);
+
+    m_mediaRemainingPosition = new QComboBox(posGroup);
+    addPositionItems(m_mediaRemainingPosition);
+    m_mediaRemainingOffset = new QSpinBox(posGroup);
+    m_mediaRemainingOffset->setRange(0, 2000);
+    posForm->addRow(obs_module_text("Settings.MediaRemainingPosition"), m_mediaRemainingPosition);
+    posForm->addRow(obs_module_text("Settings.MediaRemainingOffset"), m_mediaRemainingOffset);
+
     root->addWidget(posGroup);
 
     // Projectors group
@@ -149,10 +197,10 @@ void SettingsDialog::loadFromConfig()
     m_bgOpacity->setValue(cfg.backgroundOpacity);
     m_bgPadding->setValue(cfg.backgroundPadding);
 
-    int idx = m_position->findData(overlayPositionToString(cfg.position));
-    if (idx >= 0)
-        m_position->setCurrentIndex(idx);
-    m_offset->setValue(cfg.edgeOffset);
+    setPlacementControls(m_streamingPosition, m_streamingOffset, cfg.streamingPlacement);
+    setPlacementControls(m_recordingPosition, m_recordingOffset, cfg.recordingPlacement);
+    setPlacementControls(m_mediaElapsedPosition, m_mediaElapsedOffset, cfg.mediaElapsedPlacement);
+    setPlacementControls(m_mediaRemainingPosition, m_mediaRemainingOffset, cfg.mediaRemainingPlacement);
 }
 
 void SettingsDialog::pickTextColor()
@@ -212,9 +260,10 @@ void SettingsDialog::onAccept()
     cfg.backgroundColor = m_bgColor;
     cfg.backgroundOpacity = m_bgOpacity->value();
     cfg.backgroundPadding = m_bgPadding->value();
-    cfg.position = overlayPositionFromString(
-        m_position->currentData().toString().toUtf8().constData());
-    cfg.edgeOffset = m_offset->value();
+    readPlacementControls(m_streamingPosition, m_streamingOffset, cfg.streamingPlacement);
+    readPlacementControls(m_recordingPosition, m_recordingOffset, cfg.recordingPlacement);
+    readPlacementControls(m_mediaElapsedPosition, m_mediaElapsedOffset, cfg.mediaElapsedPlacement);
+    readPlacementControls(m_mediaRemainingPosition, m_mediaRemainingOffset, cfg.mediaRemainingPlacement);
 
     cfg.targetProjectors.clear();
     int total = 0, checked = 0;

@@ -4,6 +4,9 @@
 #include <QHash>
 #include <QPointer>
 #include <QString>
+#include <QStringList>
+#include <QList>
+#include "plugin-config.hpp"
 
 class QTimer;
 class OverlayWindow;
@@ -36,14 +39,20 @@ private:
     explicit OverlayController(QObject *parent = nullptr);
     ~OverlayController() override;
 
-    QString buildOverlayText() const;
+    struct DisplayValue {
+        QString id;
+        QString text;
+        OverlayValuePlacement placement;
+    };
+
+    QList<DisplayValue> buildDisplayValues() const;
     void clearOverlays();
 
     ProjectorTracker *m_tracker = nullptr;
     QTimer *m_timer = nullptr;
 
-    // Keyed by projector window pointer (as quintptr) to its overlay.
-    QHash<quintptr, QPointer<OverlayWindow>> m_overlays;
+    // Keyed by projector window pointer + value id to its overlay.
+    QHash<QString, QPointer<OverlayWindow>> m_overlays;
 };
 
 // Installed as the OBS frontend event callback.

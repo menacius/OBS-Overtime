@@ -57,10 +57,10 @@ QSize OverlayWindow::contentSize() const
 }
 
 void OverlayWindow::positionWithin(const QRect &projectorRect,
-                                   const PluginConfig &cfg)
+                                   const OverlayValuePlacement &placement)
 {
     const QSize sz = contentSize();
-    const int off = qMax(0, cfg.edgeOffset);
+    const int off = qMax(0, placement.edgeOffset);
 
     int x = projectorRect.x();
     int y = projectorRect.y();
@@ -74,7 +74,7 @@ void OverlayWindow::positionWithin(const QRect &projectorRect,
     const int topY = y + off;
     const int bottomY = y + h - sz.height() - off;
 
-    switch (cfg.position) {
+    switch (placement.position) {
     case OverlayPosition::Top:         x = cx;     y = topY;    break;
     case OverlayPosition::Bottom:      x = cx;     y = bottomY; break;
     case OverlayPosition::Left:        x = leftX;  y = cy;      break;
