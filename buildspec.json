@@ -1,0 +1,42 @@
+{
+  "dependencies": {
+    "prebuilt": {
+      "version": "2024-03-19",
+      "baseUrl": "https://github.com/obsproject/obs-deps/releases/download",
+      "label": "Pre-Built obs-deps",
+      "hashes": {
+        "macos": "",
+        "windows-x64": ""
+      }
+    },
+    "qt6": {
+      "version": "2024-03-19",
+      "baseUrl": "https://github.com/obsproject/obs-deps/releases/download",
+      "label": "Pre-Built Qt6",
+      "hashes": {
+        "macos": "",
+        "windows-x64": ""
+      }
+    },
+    "obs-studio": {
+      "version": "31.0.0",
+      "baseUrl": "https://github.com/obsproject/obs-studio/archive/refs/tags",
+      "label": "OBS Studio",
+      "hashes": {
+        "macos": "",
+        "windows-x64": ""
+      }
+    }
+  },
+  "name": "projector-time-overlay",
+  "displayName": "Projector Time Overlay",
+  "version": "1.0.0",
+  "author": "omniatv-group",
+  "website": "https://gitlab.com/omniatv-group/obs-overtime",
+  "email": "contact@omniatv-group",
+  "uuids": {
+    "macosPackage": "",
+    "macosInstaller": "",
+    "windowsApp": ""
+  }
+}
