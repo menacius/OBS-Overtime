@@ -11,6 +11,7 @@ class QFontComboBox;
 class QPushButton;
 class QListWidget;
 class QSlider;
+class QLineEdit;
 
 // Modal settings dialog exposing every configurable option, grouped into
 // QGroupBox sections for clarity. On accept it writes back to PluginConfig
@@ -25,6 +26,7 @@ private Q_SLOTS:
     void pickTextColor();
     void pickBackgroundColor();
     void pickMediaWarningBackgroundColor();
+    void pickTimeWarningBackgroundColor();
     void refreshProjectorList();
 
 private:
@@ -64,9 +66,17 @@ private:
     QPushButton *m_mediaWarningBgColorBtn = nullptr;
     QSlider *m_mediaWarningBgOpacity = nullptr;
 
+    QCheckBox *m_timeWarningStreaming = nullptr;
+    QCheckBox *m_timeWarningRecording = nullptr;
+    QLineEdit *m_timeWarningInterval = nullptr;
+    QSpinBox *m_timeWarningDuration = nullptr;
+    QPushButton *m_timeWarningBgColorBtn = nullptr;
+    QSlider *m_timeWarningBgOpacity = nullptr;
+
     QListWidget *m_projectorList = nullptr;
 
     unsigned int m_textColor = 0xFFFFFFFF;
     unsigned int m_bgColor = 0xFF000000;
     unsigned int m_mediaWarningBgColor = 0xFFFF0000;
+    unsigned int m_timeWarningBgColor = 0xFFFFAA00;
 };

@@ -49,6 +49,15 @@ struct PluginConfig {
     uint32_t mediaWarningBackgroundColor = 0xFFFF0000;
     int mediaWarningBackgroundOpacity = 200;
 
+    // Periodic stream/record time warning. At each interval, the selected
+    // timer background changes for the configured duration.
+    bool timeWarningStreaming = false;
+    bool timeWarningRecording = false;
+    int timeWarningIntervalSeconds = 900;
+    int timeWarningDurationSeconds = 5;
+    uint32_t timeWarningBackgroundColor = 0xFFFFAA00;
+    int timeWarningBackgroundOpacity = 220;
+
     // Colors are stored as 0xAARRGGBB.
     uint32_t textColor = 0xFFFFFFFF;
     uint32_t backgroundColor = 0xFF000000;

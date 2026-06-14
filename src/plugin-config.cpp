@@ -139,6 +139,23 @@ void PluginConfig::load()
         mediaWarningBackgroundOpacity =
             (int)obs_data_get_int(data, "media_warning_background_opacity");
 
+    if (obs_data_has_user_value(data, "time_warning_streaming"))
+        timeWarningStreaming = obs_data_get_bool(data, "time_warning_streaming");
+    if (obs_data_has_user_value(data, "time_warning_recording"))
+        timeWarningRecording = obs_data_get_bool(data, "time_warning_recording");
+    if (obs_data_has_user_value(data, "time_warning_interval_seconds"))
+        timeWarningIntervalSeconds =
+            (int)obs_data_get_int(data, "time_warning_interval_seconds");
+    if (obs_data_has_user_value(data, "time_warning_duration_seconds"))
+        timeWarningDurationSeconds =
+            (int)obs_data_get_int(data, "time_warning_duration_seconds");
+    if (obs_data_has_user_value(data, "time_warning_background_color"))
+        timeWarningBackgroundColor =
+            (uint32_t)obs_data_get_int(data, "time_warning_background_color");
+    if (obs_data_has_user_value(data, "time_warning_background_opacity"))
+        timeWarningBackgroundOpacity =
+            (int)obs_data_get_int(data, "time_warning_background_opacity");
+
     if (obs_data_has_user_value(data, "text_color"))
         textColor = (uint32_t)obs_data_get_int(data, "text_color");
     if (obs_data_has_user_value(data, "background_color"))
@@ -213,6 +230,16 @@ void PluginConfig::save() const
                      mediaWarningBackgroundColor);
     obs_data_set_int(data, "media_warning_background_opacity",
                      mediaWarningBackgroundOpacity);
+    obs_data_set_bool(data, "time_warning_streaming", timeWarningStreaming);
+    obs_data_set_bool(data, "time_warning_recording", timeWarningRecording);
+    obs_data_set_int(data, "time_warning_interval_seconds",
+                     timeWarningIntervalSeconds);
+    obs_data_set_int(data, "time_warning_duration_seconds",
+                     timeWarningDurationSeconds);
+    obs_data_set_int(data, "time_warning_background_color",
+                     timeWarningBackgroundColor);
+    obs_data_set_int(data, "time_warning_background_opacity",
+                     timeWarningBackgroundOpacity);
     obs_data_set_int(data, "text_color", textColor);
     obs_data_set_int(data, "background_color", backgroundColor);
     obs_data_set_int(data, "background_opacity", backgroundOpacity);

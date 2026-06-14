@@ -44,6 +44,20 @@ static int64_t output_elapsed_ms(obs_output_t *out)
     return (int64_t)((frames / fps) * 1000.0);
 }
 
+static bool periodic_warning_active(int64_t elapsedMs, int intervalSeconds,
+                                    int durationSeconds)
+{
+    if (elapsedMs < 0 || intervalSeconds <= 0 || durationSeconds <= 0)
+        return false;
+
+    const int64_t elapsedSeconds = elapsedMs / 1000;
+    if (elapsedSeconds <= 0)
+        return false;
+
+    const int activeDuration = qMin(durationSeconds, intervalSeconds);
+    return (elapsedSeconds % intervalSeconds) < activeDuration;
+}
+
 OverlayController *OverlayController::instance()
 {
     static OverlayController *ctrl = new OverlayController();
@@ -108,12 +122,17 @@ QList<OverlayController::DisplayValue> OverlayController::buildDisplayValues() c
         int64_t ms = output_elapsed_ms(out);
         if (out)
             obs_output_release(out);
+        const bool warningActive = cfg.timeWarningStreaming &&
+            periodic_warning_active(ms, cfg.timeWarningIntervalSeconds,
+                                    cfg.timeWarningDurationSeconds);
         values.push_back({QStringLiteral("streaming"),
-                          QStringLiteral("STREAM  %1")
+                          QStringLiteral("📶 %1")
                               .arg(QString::fromStdString(formatDuration(ms))),
                           cfg.streamingPlacement,
                           false,
-                          false});
+                          warningActive,
+                          cfg.timeWarningBackgroundColor,
+                          cfg.timeWarningBackgroundOpacity});
     }
 
     // Recording duration (derived from the active recording output).
@@ -122,12 +141,17 @@ QList<OverlayController::DisplayValue> OverlayController::buildDisplayValues() c
         int64_t ms = output_elapsed_ms(out);
         if (out)
             obs_output_release(out);
+        const bool warningActive = cfg.timeWarningRecording &&
+            periodic_warning_active(ms, cfg.timeWarningIntervalSeconds,
+                                    cfg.timeWarningDurationSeconds);
         values.push_back({QStringLiteral("recording"),
-                          QStringLiteral("REC  %1")
+                          QStringLiteral("○ %1")
                               .arg(QString::fromStdString(formatDuration(ms))),
                           cfg.recordingPlacement,
                           false,
-                          false});
+                          warningActive,
+                          cfg.timeWarningBackgroundColor,
+                          cfg.timeWarningBackgroundOpacity});
     }
 
     // Media elapsed / remaining.
@@ -142,21 +166,25 @@ QList<OverlayController::DisplayValue> OverlayController::buildDisplayValues() c
 
             if (cfg.showMediaElapsed) {
                 values.push_back({QStringLiteral("media_elapsed"),
-                                  QStringLiteral("MEDIA  %1")
+                                  QStringLiteral("V: %1")
                                       .arg(QString::fromStdString(
                                           formatDuration(elapsed))),
                                   cfg.mediaElapsedPlacement,
                                   true,
-                                  warningBlinkOn});
+                                  warningBlinkOn,
+                                  cfg.mediaWarningBackgroundColor,
+                                  cfg.mediaWarningBackgroundOpacity});
             }
             if (cfg.showMediaRemaining) {
                 values.push_back({QStringLiteral("media_remaining"),
-                                  QStringLiteral("LEFT  -%1")
+                                  QStringLiteral("V: -%1")
                                       .arg(QString::fromStdString(
                                           formatDuration(remaining))),
                                   cfg.mediaRemainingPlacement,
                                   true,
-                                  warningBlinkOn});
+                                  warningBlinkOn,
+                                  cfg.mediaWarningBackgroundColor,
+                                  cfg.mediaWarningBackgroundOpacity});
             }
         }
     }
@@ -201,8 +229,8 @@ void OverlayController::refresh()
 
             overlay->setText(value.text);
             overlay->setBackgroundOverride(value.warningBackground,
-                                           cfg.mediaWarningBackgroundColor,
-                                           cfg.mediaWarningBackgroundOpacity);
+                                           value.warningBackgroundColor,
+                                           value.warningBackgroundOpacity);
             overlay->positionWithin(proj.geometry, value.placement);
             if (!overlay->isVisible())
                 overlay->show();

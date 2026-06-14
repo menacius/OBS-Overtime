@@ -4,6 +4,7 @@
 #include "projector-tracker.hpp"
 
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QComboBox>
@@ -16,6 +17,9 @@
 #include <QLabel>
 #include <QColorDialog>
 #include <QDialogButtonBox>
+#include <QLineEdit>
+#include <QRegularExpression>
+#include <QRegularExpressionValidator>
 
 #include <obs-module.h>
 
@@ -31,6 +35,40 @@ static unsigned int colorToArgb(const QColor &c)
            ((unsigned int)c.green() << 8) | (unsigned int)c.blue();
 }
 
+static QString secondsToHms(int totalSeconds)
+{
+    if (totalSeconds < 0)
+        totalSeconds = 0;
+
+    const int hours = totalSeconds / 3600;
+    const int minutes = (totalSeconds % 3600) / 60;
+    const int seconds = totalSeconds % 60;
+
+    return QStringLiteral("%1:%2:%3")
+        .arg(hours, 2, 10, QLatin1Char('0'))
+        .arg(minutes, 2, 10, QLatin1Char('0'))
+        .arg(seconds, 2, 10, QLatin1Char('0'));
+}
+
+static int hmsToSeconds(const QString &text, int fallbackSeconds)
+{
+    const QStringList parts = text.trimmed().split(':');
+    if (parts.size() != 3)
+        return fallbackSeconds;
+
+    bool okH = false;
+    bool okM = false;
+    bool okS = false;
+    const int hours = parts[0].toInt(&okH);
+    const int minutes = parts[1].toInt(&okM);
+    const int seconds = parts[2].toInt(&okS);
+
+    if (!okH || !okM || !okS || hours < 0 || minutes < 0 || minutes > 59 ||
+        seconds < 0 || seconds > 59)
+        return fallbackSeconds;
+
+    return hours * 3600 + minutes * 60 + seconds;
+}
 
 void SettingsDialog::addPositionItems(QComboBox *combo)
 {
@@ -68,11 +106,19 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
 {
     setWindowTitle(obs_module_text("Settings.Title"));
     setModal(true);
+    resize(900, 720);
 
     auto *root = new QVBoxLayout(this);
 
     m_enabled = new QCheckBox(obs_module_text("Settings.Enabled"), this);
     root->addWidget(m_enabled);
+
+    auto *columns = new QHBoxLayout();
+    auto *leftColumn = new QVBoxLayout();
+    auto *rightColumn = new QVBoxLayout();
+    columns->addLayout(leftColumn, 1);
+    columns->addLayout(rightColumn, 1);
+    root->addLayout(columns, 1);
 
     // Font group
     auto *fontGroup = new QGroupBox(obs_module_text("Settings.Group.Font"), this);
@@ -82,7 +128,7 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
     m_fontSize->setRange(6, 256);
     fontForm->addRow(obs_module_text("Settings.FontFamily"), m_fontFamily);
     fontForm->addRow(obs_module_text("Settings.FontSize"), m_fontSize);
-    root->addWidget(fontGroup);
+    leftColumn->addWidget(fontGroup);
 
     // Values group
     auto *valuesGroup = new QGroupBox(obs_module_text("Settings.Group.Values"), this);
@@ -91,14 +137,14 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
     m_showRecording = new QCheckBox(obs_module_text("Settings.ShowRecording"), valuesGroup);
     m_showMediaElapsed = new QCheckBox(obs_module_text("Settings.ShowMediaElapsed"), valuesGroup);
     m_showMediaRemaining = new QCheckBox(obs_module_text("Settings.ShowMediaRemaining"), valuesGroup);
-    valuesLayout->addWidget(m_showStreaming);
-    valuesLayout->addWidget(m_showRecording);
     m_mediaTimesOnlyWhenActivePlaying = new QCheckBox(
         obs_module_text("Settings.MediaOnlyWhenActivePlaying"), valuesGroup);
+    valuesLayout->addWidget(m_showStreaming);
+    valuesLayout->addWidget(m_showRecording);
     valuesLayout->addWidget(m_showMediaElapsed);
     valuesLayout->addWidget(m_showMediaRemaining);
     valuesLayout->addWidget(m_mediaTimesOnlyWhenActivePlaying);
-    root->addWidget(valuesGroup);
+    leftColumn->addWidget(valuesGroup);
 
     // Colors group
     auto *colorGroup = new QGroupBox(obs_module_text("Settings.Group.Colors"), this);
@@ -113,7 +159,7 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
     colorForm->addRow(obs_module_text("Settings.BackgroundColor"), m_bgColorBtn);
     colorForm->addRow(obs_module_text("Settings.BackgroundOpacity"), m_bgOpacity);
     colorForm->addRow(obs_module_text("Settings.BackgroundPadding"), m_bgPadding);
-    root->addWidget(colorGroup);
+    leftColumn->addWidget(colorGroup);
     QObject::connect(m_textColorBtn, SIGNAL(clicked()), this, SLOT(pickTextColor()));
     QObject::connect(m_bgColorBtn, SIGNAL(clicked()), this, SLOT(pickBackgroundColor()));
 
@@ -133,9 +179,45 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
                              m_mediaWarningBgColorBtn);
     mediaWarningForm->addRow(obs_module_text("Settings.MediaWarningBackgroundOpacity"),
                              m_mediaWarningBgOpacity);
-    root->addWidget(mediaWarningGroup);
+    leftColumn->addWidget(mediaWarningGroup);
     QObject::connect(m_mediaWarningBgColorBtn, SIGNAL(clicked()), this,
                      SLOT(pickMediaWarningBackgroundColor()));
+
+    // Periodic time warning group
+    auto *timeWarningGroup = new QGroupBox(
+        obs_module_text("Settings.Group.TimeWarning"), this);
+    auto *timeWarningForm = new QFormLayout(timeWarningGroup);
+    m_timeWarningStreaming = new QCheckBox(obs_module_text("Settings.TimeWarningStreaming"),
+                                          timeWarningGroup);
+    m_timeWarningRecording = new QCheckBox(obs_module_text("Settings.TimeWarningRecording"),
+                                          timeWarningGroup);
+    m_timeWarningInterval = new QLineEdit(timeWarningGroup);
+    m_timeWarningInterval->setPlaceholderText(QStringLiteral("00:15:00"));
+    m_timeWarningInterval->setToolTip(QStringLiteral("HH:MM:SS"));
+    m_timeWarningInterval->setValidator(new QRegularExpressionValidator(
+        QRegularExpression(QStringLiteral("^\\d{1,6}:[0-5]\\d:[0-5]\\d$")),
+        m_timeWarningInterval));
+    m_timeWarningDuration = new QSpinBox(timeWarningGroup);
+    m_timeWarningDuration->setRange(1, 3600);
+    m_timeWarningDuration->setSuffix(QStringLiteral(" s"));
+    m_timeWarningBgColorBtn = new QPushButton(timeWarningGroup);
+    m_timeWarningBgOpacity = new QSlider(Qt::Horizontal, timeWarningGroup);
+    m_timeWarningBgOpacity->setRange(0, 255);
+    timeWarningForm->addRow(m_timeWarningStreaming);
+    timeWarningForm->addRow(m_timeWarningRecording);
+    timeWarningForm->addRow(obs_module_text("Settings.TimeWarningInterval"),
+                            m_timeWarningInterval);
+    timeWarningForm->addRow(obs_module_text("Settings.TimeWarningDuration"),
+                            m_timeWarningDuration);
+    timeWarningForm->addRow(obs_module_text("Settings.TimeWarningBackgroundColor"),
+                            m_timeWarningBgColorBtn);
+    timeWarningForm->addRow(obs_module_text("Settings.TimeWarningBackgroundOpacity"),
+                            m_timeWarningBgOpacity);
+    leftColumn->addWidget(timeWarningGroup);
+    QObject::connect(m_timeWarningBgColorBtn, SIGNAL(clicked()), this,
+                     SLOT(pickTimeWarningBackgroundColor()));
+
+    leftColumn->addStretch(1);
 
     // Per-value position group
     auto *posGroup = new QGroupBox(obs_module_text("Settings.Group.ValuePositions"), this);
@@ -169,16 +251,16 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
     posForm->addRow(obs_module_text("Settings.MediaRemainingPosition"), m_mediaRemainingPosition);
     posForm->addRow(obs_module_text("Settings.MediaRemainingOffset"), m_mediaRemainingOffset);
 
-    root->addWidget(posGroup);
+    rightColumn->addWidget(posGroup);
 
     // Projectors group
     auto *projGroup = new QGroupBox(obs_module_text("Settings.Group.Projectors"), this);
     auto *projLayout = new QVBoxLayout(projGroup);
     m_projectorList = new QListWidget(projGroup);
     auto *refreshBtn = new QPushButton("Refresh", projGroup);
-    projLayout->addWidget(m_projectorList);
+    projLayout->addWidget(m_projectorList, 1);
     projLayout->addWidget(refreshBtn);
-    root->addWidget(projGroup);
+    rightColumn->addWidget(projGroup, 1);
     QObject::connect(refreshBtn, SIGNAL(clicked()), this, SLOT(refreshProjectorList()));
 
     auto *buttons = new QDialogButtonBox(
@@ -227,6 +309,14 @@ void SettingsDialog::loadFromConfig()
     updateColorButton(m_mediaWarningBgColorBtn, m_mediaWarningBgColor);
     m_mediaWarningBgOpacity->setValue(cfg.mediaWarningBackgroundOpacity);
 
+    m_timeWarningStreaming->setChecked(cfg.timeWarningStreaming);
+    m_timeWarningRecording->setChecked(cfg.timeWarningRecording);
+    m_timeWarningInterval->setText(secondsToHms(cfg.timeWarningIntervalSeconds));
+    m_timeWarningDuration->setValue(cfg.timeWarningDurationSeconds);
+    m_timeWarningBgColor = cfg.timeWarningBackgroundColor;
+    updateColorButton(m_timeWarningBgColorBtn, m_timeWarningBgColor);
+    m_timeWarningBgOpacity->setValue(cfg.timeWarningBackgroundOpacity);
+
     setPlacementControls(m_streamingPosition, m_streamingOffset, cfg.streamingPlacement);
     setPlacementControls(m_recordingPosition, m_recordingOffset, cfg.recordingPlacement);
     setPlacementControls(m_mediaElapsedPosition, m_mediaElapsedOffset, cfg.mediaElapsedPlacement);
@@ -266,6 +356,17 @@ void SettingsDialog::pickMediaWarningBackgroundColor()
     }
 }
 
+void SettingsDialog::pickTimeWarningBackgroundColor()
+{
+    QColor c = QColorDialog::getColor(argbToColor(m_timeWarningBgColor), this,
+                                      "Time warning background color",
+                                      QColorDialog::ShowAlphaChannel);
+    if (c.isValid()) {
+        m_timeWarningBgColor = colorToArgb(c);
+        updateColorButton(m_timeWarningBgColorBtn, m_timeWarningBgColor);
+    }
+}
+
 void SettingsDialog::refreshProjectorList()
 {
     const PluginConfig &cfg = PluginConfig::instance();
@@ -302,6 +403,13 @@ void SettingsDialog::onAccept()
     cfg.mediaWarningThresholdSeconds = m_mediaWarningThreshold->value();
     cfg.mediaWarningBackgroundColor = m_mediaWarningBgColor;
     cfg.mediaWarningBackgroundOpacity = m_mediaWarningBgOpacity->value();
+    cfg.timeWarningStreaming = m_timeWarningStreaming->isChecked();
+    cfg.timeWarningRecording = m_timeWarningRecording->isChecked();
+    cfg.timeWarningIntervalSeconds = hmsToSeconds(
+        m_timeWarningInterval->text(), cfg.timeWarningIntervalSeconds);
+    cfg.timeWarningDurationSeconds = m_timeWarningDuration->value();
+    cfg.timeWarningBackgroundColor = m_timeWarningBgColor;
+    cfg.timeWarningBackgroundOpacity = m_timeWarningBgOpacity->value();
     cfg.textColor = m_textColor;
     cfg.backgroundColor = m_bgColor;
     cfg.backgroundOpacity = m_bgOpacity->value();

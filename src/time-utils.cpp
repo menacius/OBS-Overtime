@@ -1,7 +1,6 @@
 #include "time-utils.hpp"
 
 #include <cstdio>
-#include <cstdlib>
 
 std::string formatDuration(int64_t milliseconds)
 {
@@ -14,12 +13,7 @@ std::string formatDuration(int64_t milliseconds)
     int64_t seconds = totalSeconds % 60;
 
     char buf[32];
-    if (hours > 0) {
-        snprintf(buf, sizeof(buf), "%lld:%02lld:%02lld",
-                 (long long)hours, (long long)minutes, (long long)seconds);
-    } else {
-        snprintf(buf, sizeof(buf), "%lld:%02lld",
-                 (long long)minutes, (long long)seconds);
-    }
+    snprintf(buf, sizeof(buf), "%02lld:%02lld:%02lld",
+             (long long)hours, (long long)minutes, (long long)seconds);
     return std::string(buf);
 }

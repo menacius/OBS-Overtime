@@ -45,6 +45,8 @@ private:
         OverlayValuePlacement placement;
         bool isMediaValue = false;
         bool warningBackground = false;
+        unsigned int warningBackgroundColor = 0xFFFF0000;
+        int warningBackgroundOpacity = 200;
     };
 
     QList<DisplayValue> buildDisplayValues() const;
