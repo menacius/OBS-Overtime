@@ -28,12 +28,12 @@
       }
     }
   },
-  "name": "projector-time-overlay",
-  "displayName": "Projector Time Overlay",
-  "version": "1.0.0",
-  "author": "omniatv-group",
-  "website": "https://gitlab.com/omniatv-group/obs-overtime",
-  "email": "contact@omniatv-group",
+  "name": "obs-overtime",
+  "displayName": "OBS Overtime",
+  "version": "0.1.0",
+  "author": "OmniaTV",
+  "website": "https://software.omniatv.com/overtime/",
+  "email": "",
   "uuids": {
     "macosPackage": "",
     "macosInstaller": "",
